@@ -2,6 +2,7 @@ from abc import abstractmethod, ABCMeta
 import os
 import json
 import requests
+import base64
 import click
 from mlflow_export_import.common import MlflowExportImportException
 from . import USER_AGENT
@@ -74,7 +75,7 @@ class HttpClient(BaseHttpClient):
     """
     Wrapper for HTTP calls for MLflow Databricks APIs.
     """
-    def __init__(self, api_name, host=None, token=None):
+    def __init__(self, api_name, host=None, token=None, username=None, password=None):
         """
         :param api_name: Name of base API such as 'api/2.0' or 'api/2.0/mlflow'.
         :param host: Host name of tracking server such as 'http://localhost:5000' or 'databricks://my_profile'.
@@ -87,7 +88,6 @@ class HttpClient(BaseHttpClient):
                 (host, token) = databricks_cli_utils.get_host_token_for_profile(profile)
         else:
             (host, token) = mlflow_auth_utils.get_mlflow_host_token()
-
         if host is None:
             raise MlflowExportImportException(
                 "MLflow tracking URI (MLFLOW_TRACKING_URI environment variable) is not configured correctly",
@@ -96,6 +96,8 @@ class HttpClient(BaseHttpClient):
         self.host = host
         self.api_uri = os.path.join(host, api_name)
         self.token = token
+        self.username = username
+        self.password = password
 
 
     def _get(self, resource, params=None):
@@ -181,6 +183,9 @@ class HttpClient(BaseHttpClient):
         headers = { "User-Agent": USER_AGENT, "Content-Type": "application/json" }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        if self.username and self.password:
+            basic_auth = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
+            headers["Authorization"] = f"Basic {basic_auth}"
         return headers
 
     def _mk_uri(self, resource):
@@ -230,8 +235,8 @@ class MlflowHttpClient(HttpClient):
     """
     MLflow API client: api/2.0
     """
-    def __init__(self, host=None, token=None):
-        super().__init__("api/2.0/mlflow", host, token)
+    def __init__(self, host=None, token=None, username=None, password=None):
+        super().__init__("api/2.0/mlflow", host, token, username, password)
 
 
 @click.command()
