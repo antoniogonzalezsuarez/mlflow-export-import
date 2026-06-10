@@ -159,13 +159,13 @@ There are several different ways to install the package.
 Recommended.
 
 ```
-pip install git+https:///github.com/mlflow/mlflow-export-import/#egg=mlflow-export-import
+pip install git+https:///github.com/antoniogonzalezsuarez/mlflow-export-import/#egg=mlflow-export-import
 ```
 
 #### 3. Install from a specific commit
 
 ```
-pip install git+https:///github.com/mlflow/mlflow-export-import@a334f8003a3c9c3b9cd0173827be692a39355fd8
+pip install git+https:///github.com/antoniogonzalezsuarez/mlflow-export-import@a334f8003a3c9c3b9cd0173827be692a39355fd8
 ```
 
 #### 4. Install from github clone
