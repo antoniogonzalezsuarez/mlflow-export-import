@@ -12,7 +12,7 @@ def create_http_client(mlflow_client, model_name=None):
     if model_name and model_utils.is_unity_catalog_model(model_name):
         return HttpClient("api/2.0/mlflow/unity-catalog", creds.host, creds.token)
     else:
-        return MlflowHttpClient(creds.host, creds.token)
+        return MlflowHttpClient(creds.host, creds.token, creds.username, creds.password)
 
 
 def create_dbx_client(mlflow_client):
