@@ -6,6 +6,7 @@ from mlflow_export_import.run.export_run import export_run
 from mlflow_export_import.run.import_run import import_run
 from mlflow_export_import.common import utils
 from mlflow_export_import.common.click_options import opt_run_id, opt_experiment_name
+from mlflow_export_import.client.client_registry import get_mlflow_client
 from . import copy_utils
 from . click_options import opt_src_mlflow_uri, opt_dst_mlflow_uri
 
@@ -36,8 +37,8 @@ def copy(
 
 
 def _copy(src_run_id, dst_experiment_name, src_client=None, dst_client=None):
-    src_client = src_client or mlflow.MlflowClient()
-    dst_client = dst_client or mlflow.MlflowClient()
+    src_client = src_client or get_mlflow_client()
+    dst_client = dst_client or get_mlflow_client()
     with tempfile.TemporaryDirectory() as download_dir:
         export_run(
             src_run_id,

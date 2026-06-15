@@ -174,7 +174,7 @@ def _create_prompt_safe(name, template, tags=None, commit_message=None, mlflow_c
     
     # Try MLflow client approach (works with 2.21+)
     try:
-        client = mlflow_client or mlflow.MlflowClient()
+        client = mlflow_client or create_mlflow_client()
         if hasattr(client, 'register_prompt'):
             return client.register_prompt(
                 name=name,

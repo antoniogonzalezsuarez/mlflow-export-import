@@ -15,6 +15,7 @@ from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.common.click_options import opt_input_dir
 from mlflow_export_import.common.version_utils import has_prompt_support, log_version_info
 from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 from mlflow_export_import.prompt.import_prompt import import_prompt
 
 _logger = utils.getLogger(__name__)
@@ -51,6 +52,8 @@ def import_prompts(
         
         # Import prompts
         if use_threads:
+            max_workers = utils.get_threads(use_threads=True)
+            sync_pool_with_threads(max_workers)
             results = _import_prompts_threaded(prompt_dirs, mlflow_client, delete_prompt)
         else:
             results = _import_prompts_sequential(prompt_dirs, mlflow_client, delete_prompt)

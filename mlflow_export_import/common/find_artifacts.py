@@ -5,7 +5,8 @@ Find artifacts of a run that match a name.
 import sys
 import os
 import click
-import mlflow
+
+from mlflow_export_import.client.client_utils import create_mlflow_client
 
 
 def find_run_model_names(mlflow_client, run_id):
@@ -45,7 +46,7 @@ def main(run_id, path, target, max_level):
     print("Options:")
     for k,v in locals().items():
         print(f"  {k}: {v}")
-    client = mlflow.client.MlflowClient()
+    client = create_mlflow_client()
     matches = find_artifacts(client, run_id, path, target, max_level)
     print("Matches:")
     for m in matches:

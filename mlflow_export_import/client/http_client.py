@@ -8,6 +8,7 @@ from mlflow_export_import.common import MlflowExportImportException
 from . import USER_AGENT
 from . import mlflow_auth_utils
 from . import databricks_cli_utils
+from .client_registry import HttpSessionRegistry
 
 _TIMEOUT = 120 # per mlflow.MlflowClient
 
@@ -75,14 +76,14 @@ class HttpClient(BaseHttpClient):
     """
     Wrapper for HTTP calls for MLflow Databricks APIs.
     """
-    def __init__(self, api_name, host=None, token=None, username=None, password=None):
+    def __init__(self, api_name, host=None, token=None, username=None, password=None, session=None):
         """
         :param api_name: Name of base API such as 'api/2.0' or 'api/2.0/mlflow'.
         :param host: Host name of tracking server such as 'http://localhost:5000' or 'databricks://my_profile'.
         :param token: Databricks token if using Databricks.
+        :param session: Optional shared requests.Session for connection pooling.
         """
         if host:
-            # Assume 'host' is a Databricks profile
             if not host.startswith("http"):
                 profile = host.replace("databricks://","")
                 (host, token) = databricks_cli_utils.get_host_token_for_profile(profile)
@@ -98,11 +99,12 @@ class HttpClient(BaseHttpClient):
         self.token = token
         self.username = username
         self.password = password
+        self._session = session or HttpSessionRegistry.get_session(host)
 
 
     def _get(self, resource, params=None):
         uri = self._mk_uri(resource)
-        rsp = requests.get(uri, headers=self._mk_headers(), data=params, timeout=_TIMEOUT)
+        rsp = self._session.get(uri, headers=self._mk_headers(), data=params, timeout=_TIMEOUT)
         return self._check_response(rsp, params)
 
 
@@ -116,7 +118,7 @@ class HttpClient(BaseHttpClient):
 
 
     def _post(self, resource, data=None):
-        return self._mutator(requests.post, resource, data)
+        return self._mutator(self._session.post, resource, data)
 
     def post(self, resource, data=None):
         """ Executes an HTTP POST call
@@ -128,7 +130,7 @@ class HttpClient(BaseHttpClient):
 
 
     def _put(self, resource, data=None):
-        return self._mutator(requests.put, resource, data)
+        return self._mutator(self._session.put, resource, data)
 
     def put(self, resource, data=None):
         """ Executes an HTTP PUT call
@@ -140,7 +142,7 @@ class HttpClient(BaseHttpClient):
 
 
     def _patch(self, resource, data=None):
-        return self._mutator(requests.patch, resource, data)
+        return self._mutator(self._session.patch, resource, data)
 
     def patch(self, resource, data=None):
         """ Executes an HTTP PATCH call
@@ -153,7 +155,7 @@ class HttpClient(BaseHttpClient):
 
     def _delete(self, resource):
         uri = self._mk_uri(resource)
-        rsp = requests.delete(uri, headers=self._mk_headers(), timeout=_TIMEOUT)
+        rsp = self._session.delete(uri, headers=self._mk_headers(), timeout=_TIMEOUT)
         return self._check_response(rsp)
 
     def delete(self, resource):
@@ -227,16 +229,16 @@ class DatabricksHttpClient(HttpClient):
     """
     Databricks API client: api/2.0
     """
-    def __init__(self, host=None, token=None):
-        super().__init__("api/2.0", host, token)
+    def __init__(self, host=None, token=None, session=None):
+        super().__init__("api/2.0", host, token, session=session)
 
 
 class MlflowHttpClient(HttpClient):
     """
     MLflow API client: api/2.0
     """
-    def __init__(self, host=None, token=None, username=None, password=None):
-        super().__init__("api/2.0/mlflow", host, token, username, password)
+    def __init__(self, host=None, token=None, username=None, password=None, session=None):
+        super().__init__("api/2.0/mlflow", host, token, username, password, session=session)
 
 
 @click.command()

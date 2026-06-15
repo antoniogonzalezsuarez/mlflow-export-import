@@ -16,6 +16,7 @@ from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.common.click_options import opt_output_dir
 from mlflow_export_import.common.version_utils import has_prompt_support, log_version_info
 from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 from mlflow_export_import.prompt.export_prompt import export_prompt, _get_prompt_safe
 
 _logger = utils.getLogger(__name__)
@@ -45,24 +46,22 @@ def export_prompts(
     log_version_info()
     
     try:
-        # Get list of prompts to export
         if prompt_names:
-            prompts_to_export = _get_specified_prompts(prompt_names)
+            prompts_to_export = _get_specified_prompts(prompt_names, mlflow_client)
         else:
-            prompts_to_export = _get_all_prompt_versions()
+            prompts_to_export = _get_all_prompt_versions(mlflow_client)
         
         _logger.info(f"Found {len(prompts_to_export)} prompts to export")
         
-        # Create output directory
         os.makedirs(output_dir, exist_ok=True)
         
-        # Export prompts
         if use_threads:
-            results = _export_prompts_threaded(prompts_to_export, output_dir)
+            max_workers = utils.get_threads(use_threads=True)
+            sync_pool_with_threads(max_workers)
+            results = _export_prompts_threaded(prompts_to_export, output_dir, mlflow_client)
         else:
-            results = _export_prompts_sequential(prompts_to_export, output_dir)
+            results = _export_prompts_sequential(prompts_to_export, output_dir, mlflow_client)
         
-        # Summary
         successful = [r for r in results if r is not None]
         failed = len(results) - len(successful)
         
@@ -72,7 +71,6 @@ def export_prompts(
             "failed_exports": failed
         }
         
-        # Write summary
         io_utils.write_export_file(output_dir, "prompts_summary.json", __file__, summary)
         
         _logger.info(f"Prompt export completed: {summary}")
@@ -93,7 +91,6 @@ def _search_prompts_with_pagination(search_func):
         prompts = list(response)
         all_prompts.extend(prompts)
         
-        # Check if there are more pages
         page_token = response.token if hasattr(response, 'token') else None
         if not page_token:
             break
@@ -101,12 +98,16 @@ def _search_prompts_with_pagination(search_func):
     return all_prompts
 
 
-def _get_all_prompts():
+def _get_all_prompts(mlflow_client):
     """
     Get all available prompts from the registry with pagination support.
     Tries multiple APIs for compatibility across MLflow versions (2.21+ and 3.0+).
+
+    :param mlflow_client: Shared MLflow client.
+    :type mlflow_client: mlflow.tracking.MlflowClient
+    :return: List of prompts.
+    :rtype: list
     """
-    # Try MLflow 3.0+ genai namespace first (recommended for 3.0+)
     try:
         import mlflow.genai
         if hasattr(mlflow.genai, 'search_prompts'):
@@ -114,15 +115,12 @@ def _get_all_prompts():
     except (ImportError, AttributeError, Exception):
         pass
     
-    # Try MLflow client approach (works with 2.21+)
     try:
-        client = mlflow.MlflowClient()
-        if hasattr(client, 'search_prompts'):
-            return _search_prompts_with_pagination(client.search_prompts)
+        if hasattr(mlflow_client, 'search_prompts'):
+            return _search_prompts_with_pagination(mlflow_client.search_prompts)
     except (ImportError, AttributeError, Exception):
         pass
     
-    # Try top-level functions (deprecated but may work)
     try:
         if hasattr(mlflow, 'search_prompts'):
             return _search_prompts_with_pagination(mlflow.search_prompts)
@@ -132,84 +130,71 @@ def _get_all_prompts():
     raise Exception(f"No compatible prompt search API found in MLflow {mlflow.__version__}. Ensure prompt registry is supported.")
 
 
-def _get_all_prompt_versions():
+def _get_all_prompt_versions(mlflow_client):
     """Get all prompt versions from all prompts."""
-    all_prompts = _get_all_prompts()
+    all_prompts = _get_all_prompts(mlflow_client)
     prompt_versions = []
     
     for prompt in all_prompts:
-        versions = _get_prompt_versions(prompt.name)
+        versions = _get_prompt_versions(prompt.name, mlflow_client)
         prompt_versions.extend(versions)
     
     return prompt_versions
 
 
-def _get_prompt_versions(prompt_name):
+def _get_prompt_versions(prompt_name, mlflow_client):
     """Get all versions of a specific prompt using best available API."""
-    # Try search_prompt_versions API first (MLflow 3.0+, Unity Catalog)
-    # This is the proper way to get all versions without iteration
     try:
-        client = mlflow.MlflowClient()
-        if hasattr(client, 'search_prompt_versions'):
+        if hasattr(mlflow_client, 'search_prompt_versions'):
             _logger.debug(f"Using search_prompt_versions API for '{prompt_name}'")
             
-            # Handle pagination to get all versions
             all_versions = []
             page_token = None
             
             while True:
-                response = client.search_prompt_versions(
+                response = mlflow_client.search_prompt_versions(
                     prompt_name, 
                     max_results=1000,
                     page_token=page_token
                 )
                 
-                # Extract versions from response
                 versions = list(response.prompt_versions) if hasattr(response, 'prompt_versions') else list(response)
                 all_versions.extend(versions)
                 
-                # Check if there are more pages
                 page_token = response.token if hasattr(response, 'token') else None
                 if not page_token:
                     break
             
             if all_versions:
-                # Sort by version number to ensure consistent ordering (important for version preservation)
                 all_versions = sorted(all_versions, key=lambda v: int(v.version))
                 _logger.info(f"Found {len(all_versions)} version(s) for prompt '{prompt_name}' via search API")
                 return all_versions
     except Exception as e:
         _logger.debug(f"search_prompt_versions not available or failed: {e}")
     
-    # Fallback: iterative discovery for OSS MLflow or older versions without search_prompt_versions API
-    # Uses dynamic expansion to handle prompts with any number of versions
     _logger.debug(f"Using iterative version discovery for '{prompt_name}' (fallback method)")
     versions = []
     
-    # Dynamic approach: Start with reasonable limit and expand as needed
-    # This handles prompts with 100+ versions without hardcoding a large range
     version_num = 1
     consecutive_missing = 0
-    max_consecutive_missing = 3  # Stop after 3 consecutive missing versions
+    max_consecutive_missing = 3
     
     while True:
         try:
-            prompt_version = _get_prompt_safe(prompt_name, str(version_num))
+            prompt_version = _get_prompt_safe(prompt_name, str(version_num), mlflow_client)
             if prompt_version:
                 versions.append(prompt_version)
-                consecutive_missing = 0  # Reset counter on success
+                consecutive_missing = 0
             else:
                 consecutive_missing += 1
         except Exception:
             consecutive_missing += 1
         
-        # Stop if we've hit too many consecutive missing versions
         if consecutive_missing >= max_consecutive_missing:
             break
         
         version_num += 1
         
-        # Safety check: warn if we're checking a very high version number
         if version_num > 1000 and version_num % 100 == 0:
             _logger.warning(f"Still searching for versions of '{prompt_name}' at version {version_num}...")
     
@@ -221,15 +206,13 @@ def _get_prompt_versions(prompt_name):
     return versions
 
 
-def _get_specified_prompts(prompt_names):
+def _get_specified_prompts(prompt_names, mlflow_client):
     """Get specified prompts with their latest versions."""
     prompts = []
     for prompt_name in prompt_names:
         try:
-            # Get the prompt and find its latest version
-            prompt_versions = _get_prompt_versions(prompt_name)
+            prompt_versions = _get_prompt_versions(prompt_name, mlflow_client)
             if prompt_versions:
-                # Get the latest version
                 latest = max(prompt_versions, key=lambda x: int(x.version))
                 prompts.append(latest)
             else:
@@ -240,21 +223,21 @@ def _get_specified_prompts(prompt_names):
     return prompts
 
 
-def _export_prompts_sequential(prompts, output_dir):
+def _export_prompts_sequential(prompts, output_dir, mlflow_client):
     """Export prompts sequentially."""
     results = []
     for prompt in prompts:
         prompt_dir = os.path.join(output_dir, f"{prompt.name}_v{prompt.version}")
-        result = export_prompt(prompt.name, prompt.version, prompt_dir)
+        result = export_prompt(prompt.name, prompt.version, prompt_dir, mlflow_client=mlflow_client)
         results.append(result)
     return results
 
 
-def _export_prompts_threaded(prompts, output_dir):
+def _export_prompts_threaded(prompts, output_dir, mlflow_client):
     """Export prompts using multithreading."""
     def export_single(prompt):
         prompt_dir = os.path.join(output_dir, f"{prompt.name}_v{prompt.version}")
-        return export_prompt(prompt.name, prompt.version, prompt_dir)
+        return export_prompt(prompt.name, prompt.version, prompt_dir, mlflow_client=mlflow_client)
     
     max_workers = utils.get_threads(use_threads=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -281,12 +264,11 @@ def main(output_dir, prompts, use_threads):
     for k, v in locals().items():
         _logger.info(f"  {k}: {v}")
     
-    # Handle 'all', file, or comma-separated list
     if prompts.endswith(".txt"):
         with open(prompts, "r", encoding="utf-8") as f:
             prompt_names_list = f.read().splitlines()
     elif prompts.lower() == "all":
-        prompt_names_list = None  # None means export all
+        prompt_names_list = None
     else:
         prompt_names_list = [name.strip() for name in prompts.split(",")]
     
@@ -296,7 +278,6 @@ def main(output_dir, prompts, use_threads):
         use_threads=use_threads
     )
     
-    # Check for failures
     if result is None:
         _logger.error("Prompt export failed with unknown error")
         sys.exit(1)

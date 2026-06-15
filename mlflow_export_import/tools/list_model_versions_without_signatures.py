@@ -5,15 +5,15 @@ List model versions without a model signature.
 import click
 import pandas as pd
 from tabulate import tabulate
-import mlflow
 
+from mlflow_export_import.client.client_utils import create_mlflow_client
 from . click_options import opt_filter, opt_output_file, opt_use_get_model_info
 from . tools_utils import search_model_versions
 from . signature_utils import get_model_signature
 
 
 def as_pandas_df(filter, use_get_model_info=False):
-    client = mlflow.MlflowClient()
+    client = create_mlflow_client()
     versions = search_model_versions(client, filter)
 
     print(f"Found {len(versions)} model versions")

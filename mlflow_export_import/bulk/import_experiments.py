@@ -19,6 +19,8 @@ from mlflow_export_import.common.click_options import (
 from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.experiment.import_experiment import import_experiment
 from mlflow_export_import.bulk import rename_utils
+from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 
 _logger = utils.getLogger(__name__)
 
@@ -47,7 +49,7 @@ def import_experiments(
     """
 
     experiment_renames = rename_utils.get_renames(experiment_renames)
-    mlflow_client = mlflow_client or mlflow.MlflowClient()
+    mlflow_client = mlflow_client or create_mlflow_client()
     dct = io_utils.read_file_mlflow(os.path.join(input_dir, "experiments.json"))
     exps = dct["experiments"]
     _logger.info("Importing experiments:")
@@ -55,6 +57,7 @@ def import_experiments(
         _logger.info(f"  Importing experiment: {exp}")
 
     max_workers = utils.get_threads(use_threads)
+    sync_pool_with_threads(max_workers)
     futures = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for exp in exps:

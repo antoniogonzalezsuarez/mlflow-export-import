@@ -23,6 +23,7 @@ from mlflow_export_import.common.click_options import (
 )
 from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 from mlflow_export_import.model.import_model import BulkModelImporter
 from mlflow_export_import.bulk.import_experiments import import_experiments
 from mlflow_export_import.bulk import rename_utils
@@ -142,6 +143,7 @@ def _import_models(mlflow_client,
         use_threads
     ):
     max_workers = utils.get_threads(use_threads)
+    sync_pool_with_threads(max_workers)
     start_time = time.time()
 
     models_dir = os.path.join(input_dir, "models")

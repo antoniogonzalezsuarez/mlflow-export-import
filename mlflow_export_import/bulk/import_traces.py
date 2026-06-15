@@ -13,6 +13,7 @@ from mlflow_export_import.common.click_options import (
 from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.trace.import_trace import import_trace
 from mlflow_export_import.common.version_utils import has_trace_support
+from mlflow_export_import.client.client_utils import create_mlflow_client
 
 _logger = utils.getLogger(__name__)
 
@@ -28,7 +29,7 @@ def import_traces(
         _logger.warning(f"Traces are not supported in this MLflow version {mlflow.__version__} (requires 2.14+).")
         return {"unsupported": True, "mlflow_version": mlflow.__version__}
 
-    mlflow_client = mlflow_client or mlflow.MlflowClient()
+    mlflow_client = mlflow_client or create_mlflow_client()
     dct = io_utils.read_file_mlflow(os.path.join(input_dir, "traces.json"))
 
     exps = dct["experiments"]

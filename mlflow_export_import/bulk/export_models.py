@@ -23,6 +23,7 @@ from mlflow_export_import.common.click_options import (
 )
 from mlflow_export_import.common import utils, io_utils
 from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 from mlflow_export_import.model.export_model import export_model
 from mlflow_export_import.bulk import export_experiments
 from mlflow_export_import.bulk.model_utils import get_experiments_runs_of_models
@@ -134,6 +135,7 @@ def _export_models(
         export_deleted_runs = False
     ):
     max_workers = utils.get_threads(use_threads)
+    sync_pool_with_threads(max_workers)
     start_time = time.time()
     model_names = bulk_utils.get_model_names(mlflow_client, model_names)
     _logger.info("Models to export:")

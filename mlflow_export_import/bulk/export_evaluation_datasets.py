@@ -20,6 +20,7 @@ from mlflow_export_import.common.click_options import (
 )
 from mlflow_export_import.common.version_utils import has_evaluation_dataset_support, log_version_info
 from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 from mlflow_export_import.evaluation_dataset.export_evaluation_dataset import export_evaluation_dataset
 
 _logger = utils.getLogger(__name__)
@@ -63,7 +64,7 @@ def export_evaluation_datasets(
         os.makedirs(output_dir, exist_ok=True)
         
         # Export datasets
-        results = _export_datasets(datasets_to_export, output_dir, use_threads)
+        results = _export_datasets(datasets_to_export, output_dir, use_threads, mlflow_client)
         
         # Summary
         successful = [r for r in results if r is not None]
@@ -154,17 +155,19 @@ def _get_specified_datasets(dataset_names):
     return datasets
 
 
-def _export_datasets(datasets, output_dir, use_threads):
+def _export_datasets(datasets, output_dir, use_threads, mlflow_client):
     """Export datasets with optional multithreading."""
     def export_single(dataset):
         dataset_dir = os.path.join(output_dir, f"{dataset.name}_{dataset.dataset_id}")
         return export_evaluation_dataset(
             dataset_name=dataset.name,
             dataset_id=dataset.dataset_id,
-            output_dir=dataset_dir
+            output_dir=dataset_dir,
+            mlflow_client=mlflow_client
         )
     
     max_workers = utils.get_threads(use_threads)
+    sync_pool_with_threads(max_workers)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(export_single, datasets))
     

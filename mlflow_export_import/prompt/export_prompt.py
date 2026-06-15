@@ -43,7 +43,7 @@ def export_prompt(
     
     try:
         # Get the prompt - handle both v2.21+ and v3.0+ API locations
-        prompt = _get_prompt_safe(prompt_name, prompt_version)
+        prompt = _get_prompt_safe(prompt_name, prompt_version, mlflow_client)
         
         _logger.info(f"Exporting prompt: {prompt_name} version {prompt_version}")
         
@@ -87,28 +87,33 @@ def export_prompt(
         return None
 
 
-def _get_prompt_safe(prompt_name, prompt_version):
+def _get_prompt_safe(prompt_name, prompt_version, mlflow_client=None):
     """
     Get prompt version with compatibility across MLflow versions (2.21+ and 3.0+).
+
+    :param prompt_name: Name of the prompt.
+    :type prompt_name: str
+    :param prompt_version: Version of the prompt.
+    :type prompt_version: str
+    :param mlflow_client: Shared MLflow client.
+    :type mlflow_client: mlflow.tracking.MlflowClient, optional
+    :return: Prompt version object.
+    :rtype: object
     """
-    # Try MLflow 3.0+ genai namespace first
+    mlflow_client = mlflow_client or create_mlflow_client()
     try:
         import mlflow.genai
         if hasattr(mlflow.genai, 'load_prompt'):
             return mlflow.genai.load_prompt(prompt_name, prompt_version)
     except (ImportError, AttributeError):
-        # Only catch import/attribute errors, not runtime errors like "prompt not found"
         pass
     
-    # Try MLflow client approach (works with 2.21+)
     try:
-        client = mlflow.MlflowClient()
-        if hasattr(client, 'get_prompt_version'):
-            return client.get_prompt_version(prompt_name, prompt_version)
+        if hasattr(mlflow_client, 'get_prompt_version'):
+            return mlflow_client.get_prompt_version(prompt_name, prompt_version)
     except (ImportError, AttributeError):
         pass
     
-    # Try top-level functions (deprecated but may work)
     try:
         if hasattr(mlflow, 'load_prompt'):
             return mlflow.load_prompt(prompt_name, prompt_version)

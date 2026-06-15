@@ -280,6 +280,31 @@ export MLFLOW_EXPORT_IMPORT_LOG_FORMAT="%(threadName)s-%(levelname)s-%(message)s
 Note that multithreading is experimental.
 Logging is currently not fully satisfactory as it is interspersed between threads.
 
+### HTTP connection pooling and parallel exports
+
+Bulk export and import commands support `--use-threads` to process multiple experiments, models, prompts, or datasets in parallel. Each worker reuses a single shared `MlflowClient` and HTTP session per tracking URI, with keep-alive connection pooling to avoid TCP socket exhaustion (TIME_WAIT buildup) on the MLflow server.
+
+Configure pool size and parallelism with these environment variables (set them before starting the process):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MLFLOW_HTTP_POOL_MAXSIZE` | 10 | Maximum connections in the MLflow SDK HTTP pool (`urllib3` `pool_maxsize`) |
+| `MLFLOW_HTTP_POOL_CONNECTIONS` | 10 | Number of connection pools cached by the MLflow SDK |
+| `MLFLOW_EXPORT_IMPORT_HTTP_POOL_MAXSIZE` | same as above | Pool size for the package's custom HTTP client (Databricks REST APIs) |
+| `MLFLOW_EXPORT_IMPORT_MAX_THREADS` | CPU count | Override the number of worker threads when `--use-threads` is set |
+
+**Sizing rule:** set `pool_maxsize` to at least the number of worker threads. When `--use-threads` is used, bulk commands call `sync_pool_with_threads()` automatically to align pool size with `max_workers`.
+
+Example for Docker with 16 parallel workers:
+
+```bash
+export MLFLOW_HTTP_POOL_MAXSIZE=32
+export MLFLOW_HTTP_POOL_CONNECTIONS=32
+export MLFLOW_EXPORT_IMPORT_HTTP_POOL_MAXSIZE=32
+export MLFLOW_EXPORT_IMPORT_MAX_THREADS=16
+export-experiments --experiments all --output-dir /export --use-threads
+```
+
 ## Other
 
 * [README_options.md](README_options.md) - advanced options.

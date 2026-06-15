@@ -16,13 +16,13 @@ def calling_databricks(dbx_client=None):
     Are we importing into Databricks?
     Check by making call to Databricks-specific API endpoint and check for 400 status code.
     """
-    from mlflow_export_import.client.http_client import DatabricksHttpClient
+    from mlflow_export_import.client.client_utils import create_mlflow_client, create_dbx_client
     from mlflow_export_import.common import MlflowExportImportException
     from requests.exceptions import RequestException
 
     global _calling_databricks
     if _calling_databricks is None:
-        dbx_client = dbx_client or DatabricksHttpClient()
+        dbx_client = dbx_client or create_dbx_client(create_mlflow_client())
         try:
             dbx_client.get("clusters/list-node-types")
             _calling_databricks =  True
@@ -124,4 +124,9 @@ def get_user():
 
 
 def get_threads(use_threads=False):
-    return os.cpu_count() or 4 if use_threads else 1
+    if not use_threads:
+        return 1
+    explicit = os.environ.get("MLFLOW_EXPORT_IMPORT_MAX_THREADS")
+    if explicit:
+        return int(explicit)
+    return os.cpu_count() or 4

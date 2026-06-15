@@ -1,6 +1,8 @@
 import mlflow
 from mlflow.exceptions import MlflowException
 
+from mlflow_export_import.client.client_registry import get_mlflow_client
+
 
 def get_model_name(artifact_path):
     """
@@ -60,7 +62,7 @@ def adjust_model_version(vr):
 
 def mk_client(tracking_uri, registry_uri=None):
     if not tracking_uri and not registry_uri:
-        return mlflow.MlflowClient()
+        return get_mlflow_client()
     else:
         tracking_uri = tracking_uri.replace("databricks-uc", "databricks")
-        return mlflow.MlflowClient(tracking_uri, registry_uri)
+        return get_mlflow_client(tracking_uri, registry_uri)

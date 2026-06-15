@@ -25,6 +25,8 @@ from mlflow_export_import.common import utils, io_utils, mlflow_utils
 from mlflow_export_import.common import filesystem as _fs
 from mlflow_export_import.bulk import bulk_utils
 from mlflow_export_import.experiment.export_experiment import export_experiment
+from mlflow_export_import.client.client_utils import create_mlflow_client
+from mlflow_export_import.client.client_registry import sync_pool_with_threads
 
 _logger = utils.getLogger(__name__)
 
@@ -50,9 +52,10 @@ def export_experiments(
     :return: Dictionary of summary information
     """
 
-    mlflow_client = mlflow_client or mlflow.MlflowClient()
+    mlflow_client = mlflow_client or create_mlflow_client()
     start_time = time.time()
     max_workers = utils.get_threads(use_threads)
+    sync_pool_with_threads(max_workers)
     experiments_arg = _convert_dict_keys_to_list(experiments)
 
     if isinstance(experiments,str) and experiments.endswith(".txt"):
